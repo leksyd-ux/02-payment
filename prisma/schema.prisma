@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionStatus {
+  INCOMPLETE
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+enum PlanInterval {
+  FREE
+  MONTHLY
+  YEARLY
+}
+
+enum PaymentEventType {
+  INITIATION
+  VERIFICATION
+  FULFILMENT
+  FAILURE
+}
+
+model User {
+  id              String        @id @default(uuid())
+  email           String        @unique
+  name            String
+  passwordHash    String
+  emailVerifiedAt DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  sessions      Session[]
+  subscriptions Subscription[]
+  paymentEvents PaymentEvent[]
+
+  @@map("users")
+}
+
+model Session {
+  id               String   @id @default(uuid())
+  sessionTokenHash String   @unique
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+  lastActiveAt     DateTime @default(now())
+
+  @@index([sessionTokenHash])
+  @@index([userId, expiresAt])
+  @@map("sessions")
+}
+
+model Subscription {
+  id                            String             @id @default(uuid())
+  userId                        String             @unique
+  user                          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planInterval                  PlanInterval       @default(FREE)
+  status                        SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart            DateTime           @default(now())
+  currentPeriodEnd              DateTime           @default(now())
+  cancelAtPeriodEnd             Boolean            @default(false)
+  cancellationReason            String?
+  canceledAt                    DateTime?
+  providerCustomerId            String?
+  providerSubscriptionReference String?            @unique
+  createdAt                     DateTime           @default(now())
+  updatedAt                     DateTime           @updatedAt
+
+  paymentEvents PaymentEvent[]
+
+  @@index([userId, status])
+  @@index([providerSubscriptionReference])
+  @@map("subscriptions")
+}
+
+model PaymentEvent {
+  id                String           @id @default(uuid())
+  userId            String
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId    String?
+  subscription      Subscription?    @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  providerReference String           @unique
+  eventType         PaymentEventType
+  amountMinor       Int
+  currency          String           @default("usd")
+  status            String
+  metadata          Json?
+  createdAt         DateTime         @default(now())
+
+  @@index([userId, eventType])
+  @@index([providerReference])
+  @@map("payment_events")
+}
+
+model ProcessedWebhook {
+  id              String   @id @default(uuid())
+  eventId         String   @unique
+  eventType       String
+  processedAt     DateTime @default(now())
+  payloadSummary  Json?
+
+  @@index([eventId])
+  @@map("processed_webhooks")
+}
+
+model RateLimitBucket {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  count     Int      @default(1)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key, expiresAt])
+  @@map("rate_limit_buckets")
+}
