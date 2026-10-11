@@ -6,6 +6,7 @@ import {
   recordPaymentEvent,
 } from "@/lib/payments/flutterwave";
 import { PaymentEventType, PlanInterval, SubscriptionStatus } from "@prisma/client";
+import { toMinorUnits } from "@/lib/payments/config";
 
 export async function POST(req: NextRequest) {
   try {
@@ -54,7 +55,10 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Perform SERVER-SIDE VERIFICATION against Flutterwave
-    const verifiedData = await verifyTransactionWithFlutterwave(transactionId || txRef, txRef);
+    const verifiedData = await verifyTransactionWithFlutterwave(
+      transactionId || txRef,
+      initiation.providerReference
+    );
 
     if (!verifiedData || verifiedData.status !== "successful") {
       // Do NOT grant entitlement
@@ -64,7 +68,36 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4. Grant entitlement atomically
+    // 4. Bind the provider's answer to OUR ledger row.
+    // A successful transaction is only proof of payment when it is the same
+    // reference, for the same amount, in the same currency. Without these
+    // checks a single real payment could be replayed to unlock any plan.
+    if (verifiedData.txRef !== initiation.providerReference) {
+      return NextResponse.json(
+        { verified: false, message: "Transaction reference mismatch. Cannot grant entitlement." },
+        { status: 409 }
+      );
+    }
+
+    if (verifiedData.currency !== initiation.currency) {
+      return NextResponse.json(
+        { verified: false, message: "Transaction currency mismatch. Cannot grant entitlement." },
+        { status: 409 }
+      );
+    }
+
+    const verifiedMinor = toMinorUnits(Number(verifiedData.amount));
+    if (!Number.isInteger(initiation.amountMinor) || verifiedMinor !== initiation.amountMinor) {
+      return NextResponse.json(
+        {
+          verified: false,
+          message: `Transaction amount mismatch (expected ${initiation.amountMinor} minor units, received ${verifiedMinor}). Cannot grant entitlement.`,
+        },
+        { status: 409 }
+      );
+    }
+
+    // 5. Grant entitlement atomically
     const meta = (initiation.metadata as Record<string, unknown>) || {};
     const planInterval = (meta.planInterval as PlanInterval) || PlanInterval.MONTHLY;
     const now = new Date();
@@ -80,6 +113,7 @@ export async function POST(req: NextRequest) {
           amountMinor: initiation.amountMinor,
           currency: initiation.currency,
           status: "verified",
+          skipIfExists: true,
           metadata: { transactionId: verifiedData.id, flwRef: verifiedData.flwRef },
         },
         tx
@@ -93,6 +127,7 @@ export async function POST(req: NextRequest) {
           amountMinor: initiation.amountMinor,
           currency: initiation.currency,
           status: "fulfilled",
+          skipIfExists: true,
           metadata: { planInterval, periodEnd: currentPeriodEnd.toISOString() },
         },
         tx
@@ -108,7 +143,7 @@ export async function POST(req: NextRequest) {
           currentPeriodEnd,
           cancelAtPeriodEnd: false,
           cancellationReason: null,
-          providerSubscriptionReference: verifiedData.flwRef || txRef,
+          providerSubscriptionReference: initiation.providerReference,
         },
         update: {
           planInterval,
@@ -117,7 +152,7 @@ export async function POST(req: NextRequest) {
           currentPeriodEnd,
           cancelAtPeriodEnd: false,
           cancellationReason: null,
-          providerSubscriptionReference: verifiedData.flwRef || txRef,
+          providerSubscriptionReference: initiation.providerReference,
         },
       });
     });

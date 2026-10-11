@@ -33,6 +33,7 @@ Follow these numbered steps to run the application locally from a fresh clone:
    - `FLW_SECRET_KEY`: Flutterwave test secret key (`FLWSECK_TEST-...`).
    - `FLW_SECRET_HASH`: Webhook secret hash configured in Flutterwave Dashboard -> Settings -> Webhooks.
    - `CURRENCY`: `NGN` (or `USD`).
+   - `PAYMENTS_SIMULATE`: `true` serves checkout initiation and transaction verification from the local ledger instead of calling Flutterwave, so the full lifecycle can be exercised without moving money. It is ignored when `NODE_ENV=production`, and the UI displays a banner whenever it is active.
    - `PLAN_MONTHLY_MINOR`: `500000` (5,000.00 NGN in kobo).
    - `PLAN_YEARLY_MINOR`: `5000000` (50,000.00 NGN in kobo).
 4. **Create Database**:
@@ -127,6 +128,8 @@ enum PaymentEventType {
   VERIFICATION
   FULFILMENT
   FAILURE
+  DOWNGRADE_SCHEDULED
+  CANCELLATION_REQUESTED
 }
 
 model Subscription {
@@ -380,7 +383,25 @@ I chose against immediate status mutation to `CANCELED`. Retaining `status = ACT
 - **Cause**: While HTTP/1.1 headers are case-insensitive in protocol specifications, some fetch polyfills normalize differently.
 - **Fix**: Standardized header retrieval to lowercase `req.headers.get("verif-hash")` in `src/lib/payments/flutterwave.ts`.
 
-### Problem 3: Immediate Access Revocation on Cancellation
+### Problem 3: Caller-Selected Verification Branch (Payment Bypass)
+- **Symptom**: An authenticated user obtained a full Yearly entitlement with no payment by initiating a checkout and posting `verify-return` with a forged `transaction_id` beginning `flw_sim_`.
+- **Investigation**: `verifyTransactionWithFlutterwave` short-circuited to a simulated "successful" result whenever the caller-supplied `transactionId` matched a test prefix, and because the configured secret key contained `sandbox-secret`, the real verification branch was skipped entirely, making the simulator the only reachable path.
+- **Cause**: A request parameter decided which verification branch ran. Simulation was inferred from configuration *shape* rather than declared explicitly, so the fallback that grants entitlement was attacker-reachable.
+- **Fix**: Removed caller-input-driven simulation; added `isSimulationEnabled()` (opt-in, `NODE_ENV !== "production"`); simulation now reads its transaction facts from the `INITIATION` ledger row instead of the request; bound every verification to reference, amount, and currency; and made `verify-return` and the webhook reject on any mismatch. Verified with a production build: a forged `flw_sim_*` identifier returns `verified: false` and no entitlement.
+
+### Problem 4: Unique-Constraint 500s on Repeated and Concurrent Settlement
+- **Symptom**: Two signed webhooks reporting separate failure events for the same transaction returned `500`; a transaction settled through both the return URL and the webhook also returned `500`; a second user paying with the same `flw_ref` returned `500`.
+- **Investigation**: Failure rows used a fixed `${txRef}_fail` suffix, the idempotency gate was a non-atomic `findUnique` followed by `create`, derived ledger rows were re-inserted on a second settlement path, and `providerSubscriptionReference` (unique) was populated from provider data that repeats across transactions and users.
+- **Cause**: Idempotency was enforced at the entry gate only, and unique columns were written with values whose uniqueness the application does not control.
+- **Fix**: The webhook now claims the event with a single `createMany({ skipDuplicates: true })` statement, derived ledger rows append with `skipIfExists`, failure references are namespaced per event id, and `providerSubscriptionReference` stores the server-generated `txRef` while the provider's `flw_ref` is retained in ledger metadata.
+
+### Problem 5: Frozen UI and Mid-Payment Session Loss on Non-`localhost` Hosts
+- **Symptom**: `/plans` and `/billing` rendered only "Loading subscription plans..." and never hydrated. After subscribing, the return page reported "Awaiting asynchronous provider webhook confirmation" while the subscription stayed `FREE`.
+- **Investigation**: Headless Chrome showed repeated `WebSocket ... ERR_INVALID_HTTP_RESPONSE` failures for `/_next/hmr` on `http://127.0.0.1:3001` but none on `http://localhost:3001`; and the server log showed `POST /api/billing/verify-return 401` immediately after a successful `200` checkout.
+- **Cause**: Two separate origin assumptions. Next.js only trusts `localhost` and its start hostname for dev assets, so the client bundle never loaded on `127.0.0.1`. Separately, `NEXT_PUBLIC_APP_URL` was a fixed `localhost:3001`, so a checkout initiated on `127.0.0.1` redirected to `localhost`, a different origin for cookie purposes, dropping the session cookie before verification.
+- **Fix**: `next.config.ts` now builds `allowedDevOrigins` from every non-internal IPv4 address on the machine (plus `ALLOWED_DEV_ORIGINS`), so `localhost`, `127.0.0.1` and the LAN address `172.20.10.2` all hydrate, and introduced `resolveAppOrigin(req)` so every checkout redirect is built from the live request's `Host` header with `NEXT_PUBLIC_APP_URL` only as a fallback. The return page now surfaces server `error` payloads instead of masking a 401/404 as "awaiting webhook".
+
+### Problem 6: Immediate Access Revocation on Cancellation
 - **Symptom**: Early cancellation tests immediately revoked the user's Pro badge on the frontend upon clicking Cancel.
 - **Investigation**: Inspected `/api/billing/cancel` handler. Found that the initial logic set `status = CANCELED`, which immediately caused the navbar and billing view to treat the user as unentitled.
 - **Cause**: Confusing the *request to cancel* with the *expiration of the paid period*.
@@ -468,6 +489,42 @@ psql -d assessment_payments -c "SELECT \"planInterval\", status, \"cancelAtPerio
  YEARLY       | ACTIVE | t                 | Evaluator test cancellation reason | 2027-10-01 01:12:21.47
 ```
 *Proof: Status remains `ACTIVE`, `cancelAtPeriodEnd = true`, and access is preserved until 2027-10-01.*
+
+### Evidence 10: End-to-End Workflow in a Real Browser
+```text
+1. /plans opened anonymously (127.0.0.1)  -> auto session, plan FREE, buttons render
+2. Subscribe Monthly                      -> "Payment verified successfully by server."
+3. /plans                                 -> "Upgrade to Yearly (Prorated)"
+4. Proration modal                        -> 30 days remaining, credit -N4,999.80, net N45,000.20
+5. /billing                               -> YEARLY / ACTIVE, 7 append-only ledger rows
+6. Cancel with reason                    -> status "Canceling", period-end banner, access retained
+```
+
+### Evidence 8: Verification Binding Adversaries
+```text
+Signed webhook, 500.00 NGN reported against a 50,000.00 NGN initiation
+  -> {"status":"recorded_failure","message":"Amount or currency mismatch. Entitlement withheld."}
+  -> paid subscriptions for that user: 0
+
+Signed webhook, correct amount but currency USD against an NGN initiation
+  -> {"status":"recorded_failure","message":"Amount or currency mismatch. Entitlement withheld."}
+  -> paid subscriptions for that user: 0
+
+Same webhook corrected to 50,000.00 NGN
+  -> {"status":"success","message":"Payment successfully verified and subscription fulfilled."}
+  -> YEARLY / ACTIVE (binding check rejects mismatches only, it does not block valid payments)
+
+Production build (NODE_ENV=production, PAYMENTS_SIMULATE=true), forged transaction_id
+  -> {"verified":false,"message":"Transaction not yet confirmed by Flutterwave. Awaiting webhook."}
+  -> planInterval unchanged (FREE)
+```
+
+### Evidence 9: Idempotent Ledger Under Retries and Dual Settlement Paths
+```text
+Two distinct failure event ids for one transaction -> 200, 200 (no unique-constraint 500)
+Return-URL settlement followed by webhook settlement -> one FULFILMENT row, no 500
+SELECT count(*) FROM payment_events WHERE "providerReference"='<txRef>_fulfilled';  -> 1
+```
 
 ### Evidence 7: Direct Return URL Bypass Blocked
 ```bash

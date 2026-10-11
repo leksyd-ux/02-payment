@@ -5,6 +5,7 @@ import {
   recordPaymentEvent,
 } from "@/lib/payments/flutterwave";
 import { PaymentEventType, PlanInterval, SubscriptionStatus } from "@prisma/client";
+import { toMinorUnits } from "@/lib/payments/config";
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,12 +28,21 @@ export async function POST(req: NextRequest) {
     const eventId = String(data.id || data.tx_ref || `evt_${Date.now()}`);
     const txRef = String(data.tx_ref || "");
 
-    // 2. Webhook Idempotency Check
-    const alreadyProcessed = await prisma.processedWebhook.findUnique({
-      where: { eventId },
+    // 2. Atomically claim the event (idempotency gate).
+    // A check-then-write would let two concurrent deliveries both pass the check,
+    // so the unique index on eventId does the claiming in a single statement.
+    const claim = await prisma.processedWebhook.createMany({
+      data: [
+        {
+          eventId,
+          eventType: event.event || "charge.completed",
+          payloadSummary: { txRef, status: data.status, note: "claimed" },
+        },
+      ],
+      skipDuplicates: true,
     });
 
-    if (alreadyProcessed) {
+    if (claim.count === 0) {
       return NextResponse.json(
         {
           status: "success",
@@ -54,10 +64,9 @@ export async function POST(req: NextRequest) {
 
     if (!initiationEvent) {
       // Record unmatched webhook for security auditing
-      await prisma.processedWebhook.create({
+      await prisma.processedWebhook.update({
+        where: { eventId },
         data: {
-          eventId,
-          eventType: event.event || "charge.completed",
           payloadSummary: { txRef, status: data.status, note: "No matching initiation" },
         },
       });
@@ -68,26 +77,54 @@ export async function POST(req: NextRequest) {
     const meta = (initiationEvent.metadata as Record<string, unknown>) || {};
     const planInterval = (meta.planInterval as PlanInterval) || PlanInterval.MONTHLY;
 
-    // 4. Server-Side Verification of Status
-    if (data.status !== "successful") {
-      await prisma.$transaction(async (tx) => {
-        await tx.processedWebhook.create({
-          data: {
-            eventId,
-            eventType: event.event || "charge.failed",
-            payloadSummary: { txRef, status: data.status },
-          },
-        });
+    // 4. Bind the webhook to our ledger: same amount, same currency.
+    // The signature proves the payload is from Flutterwave, not that the customer
+    // paid the full amount for this transaction.
+    const receivedMinor = toMinorUnits(Number(data.amount));
+    const amountMatches = Number.isFinite(receivedMinor) && receivedMinor === initiationEvent.amountMinor;
+    const currencyMatches = String(data.currency || initiationEvent.currency).toUpperCase() ===
+      initiationEvent.currency.toUpperCase();
 
+    if (!amountMatches || !currencyMatches) {
+      await prisma.$transaction(async (tx) => {
         await recordPaymentEvent(
           {
             userId,
-            providerReference: `${txRef}_fail`,
+            providerReference: `${txRef}_fail_${eventId}`,
+            eventType: PaymentEventType.FAILURE,
+            amountMinor: initiationEvent.amountMinor,
+            currency: initiationEvent.currency,
+            status: "rejected",
+            skipIfExists: true,
+            metadata: {
+              reason: "Amount or currency did not match the initiated charge",
+              receivedAmountMinor: receivedMinor,
+              receivedCurrency: data.currency ?? null,
+            },
+          },
+          tx
+        );
+      });
+
+      return NextResponse.json({
+        status: "recorded_failure",
+        message: "Amount or currency mismatch. Entitlement withheld.",
+      });
+    }
+
+    // 5. Server-Side Verification of Status
+    if (data.status !== "successful") {
+      await prisma.$transaction(async (tx) => {
+        await recordPaymentEvent(
+          {
+            userId,
+            providerReference: `${txRef}_fail_${eventId}`,
             eventType: PaymentEventType.FAILURE,
             amountMinor: initiationEvent.amountMinor,
             currency: initiationEvent.currency,
             status: "failed",
-            metadata: { reason: data.processor_response || "Payment unsuccessful" },
+            skipIfExists: true,
+            metadata: { reason: data.processor_response || "Payment unsuccessful", eventId },
           },
           tx
         );
@@ -96,17 +133,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "recorded_failure" });
     }
 
-    // 5. Grant Entitlement & Record Stages Atomically
+    // 6. Grant Entitlement & Record Stages Atomically
     const now = new Date();
     const periodDays = planInterval === PlanInterval.YEARLY ? 365 : 30;
     const currentPeriodEnd = new Date(now.getTime() + periodDays * 24 * 60 * 60 * 1000);
 
     await prisma.$transaction(async (tx) => {
-      // Mark webhook processed (Idempotency guarantee)
-      await tx.processedWebhook.create({
+      // Refresh the claim with the resolved outcome
+      await tx.processedWebhook.update({
+        where: { eventId },
         data: {
-          eventId,
-          eventType: event.event || "charge.completed",
           payloadSummary: {
             txRef,
             amount: data.amount,
@@ -125,6 +161,7 @@ export async function POST(req: NextRequest) {
           amountMinor: initiationEvent.amountMinor,
           currency: initiationEvent.currency,
           status: "verified",
+          skipIfExists: true,
           metadata: { flwRef: data.flw_ref, eventId },
         },
         tx
@@ -139,6 +176,7 @@ export async function POST(req: NextRequest) {
           amountMinor: initiationEvent.amountMinor,
           currency: initiationEvent.currency,
           status: "fulfilled",
+          skipIfExists: true,
           metadata: {
             grantedPlan: planInterval,
             periodStart: now.toISOString(),
@@ -159,7 +197,7 @@ export async function POST(req: NextRequest) {
           currentPeriodEnd,
           cancelAtPeriodEnd: false,
           cancellationReason: null,
-          providerSubscriptionReference: data.flw_ref || txRef,
+          providerSubscriptionReference: txRef,
         },
         update: {
           planInterval,
@@ -168,7 +206,7 @@ export async function POST(req: NextRequest) {
           currentPeriodEnd,
           cancelAtPeriodEnd: false,
           cancellationReason: null,
-          providerSubscriptionReference: data.flw_ref || txRef,
+          providerSubscriptionReference: txRef,
         },
       });
     });

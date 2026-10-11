@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/security/session";
 import { prisma } from "@/lib/prisma";
-import { PlanInterval, SubscriptionStatus } from "@prisma/client";
+import { PlanInterval, SubscriptionStatus, PaymentEventType } from "@prisma/client";
+import { recordPaymentEvent } from "@/lib/payments/flutterwave";
 
 export async function POST() {
   try {
@@ -27,6 +28,22 @@ export async function POST() {
       },
     });
 
+    // Record lifecycle event in the append-only ledger
+    await recordPaymentEvent({
+      userId: session.user.id,
+      subscriptionId: sub.id,
+      providerReference: `downgrade_${session.user.id}_${Date.now()}`,
+      eventType: PaymentEventType.DOWNGRADE_SCHEDULED,
+      amountMinor: 0,
+      status: "scheduled",
+      metadata: {
+        fromPlan: PlanInterval.YEARLY,
+        toPlan: PlanInterval.MONTHLY,
+        scheduledAt: new Date().toISOString(),
+        effectiveAt: updated.currentPeriodEnd.toISOString(),
+      },
+    });
+
     return NextResponse.json({
       success: true,
       message: `Your Yearly plan will downgrade at the end of your billing cycle on ${new Date(
@@ -42,3 +59,4 @@ export async function POST() {
     );
   }
 }
+

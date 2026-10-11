@@ -165,7 +165,7 @@ export default function PlansPage() {
       <header className="section-header">
         <h1 className="section-title">Subscription Plans</h1>
         <p className="section-subtitle">
-          Choose the right billing interval for your workspace. Mid-cycle upgrades are automatically prorated to the day.
+          Choose the right billing interval for your workspace. Mid-cycle upgrades, and many more.
         </p>
       </header>
 
@@ -196,9 +196,6 @@ export default function PlansPage() {
               </li>
             ))}
           </ul>
-          <button className="btn btn-secondary" disabled style={{ width: "100%" }}>
-            {currentPlan === PlanInterval.FREE ? "Active Baseline" : "Included"}
-          </button>
         </div>
 
         {/* MONTHLY PLAN */}
@@ -267,7 +264,7 @@ export default function PlansPage() {
               disabled={actionLoading !== null}
               style={{ width: "100%" }}
             >
-              {actionLoading === "preview-upgrade" ? "Calculating Proration..." : "Upgrade to Yearly (Prorated)"}
+              {actionLoading === "preview-upgrade" ? "Calculating..." : "Upgrade to Yearly"}
             </button>
           ) : (
             <button

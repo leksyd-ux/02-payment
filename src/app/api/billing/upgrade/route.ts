@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/security/session";
 import { calculateMidCycleProration } from "@/lib/payments/proration";
 import { createFlutterwavePaymentLink } from "@/lib/payments/flutterwave";
+import { resolveAppOrigin } from "@/lib/payments/config";
 import { PlanInterval, SubscriptionStatus } from "@prisma/client";
 
 export async function GET() {
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
       amountMinor: proration.netChargeMinor,
       planInterval: PlanInterval.YEARLY,
       isUpgrade: true,
+      appUrl: resolveAppOrigin(req),
       metadata: {
         unusedCreditMinor: proration.unusedCreditMinor,
         daysRemaining: proration.daysRemaining,

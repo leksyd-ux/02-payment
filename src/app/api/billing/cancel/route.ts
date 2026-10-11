@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/security/session";
 import { prisma } from "@/lib/prisma";
-import { SubscriptionStatus } from "@prisma/client";
+import { PaymentEventType, SubscriptionStatus } from "@prisma/client";
+import { recordPaymentEvent } from "@/lib/payments/flutterwave";
 import { z } from "zod";
 
 const cancelSchema = z.object({
@@ -46,6 +47,22 @@ export async function POST(req: NextRequest) {
         cancelAtPeriodEnd: true,
         cancellationReason: reason || "User requested cancellation",
         canceledAt: now,
+      },
+    });
+
+    // Record lifecycle event in the append-only ledger
+    await recordPaymentEvent({
+      userId: session.user.id,
+      subscriptionId: sub.id,
+      providerReference: `cancel_${session.user.id}_${Date.now()}`,
+      eventType: PaymentEventType.CANCELLATION_REQUESTED,
+      amountMinor: 0,
+      status: "cancellation_scheduled",
+      metadata: {
+        plan: sub.planInterval,
+        reason: reason || "User requested cancellation",
+        requestedAt: now.toISOString(),
+        accessRetainedUntil: updated.currentPeriodEnd.toISOString(),
       },
     });
 

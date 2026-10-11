@@ -20,6 +20,7 @@ export default async function RootLayout({
     <html lang="en">
       <body>
         <Navbar user={session ? session.user : null} />
+
         {children}
       </body>
     </html>

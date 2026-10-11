@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/security/session";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { createFlutterwavePaymentLink } from "@/lib/payments/flutterwave";
-import { PLAN_PRICING_MINOR } from "@/lib/payments/config";
-import { PlanInterval, SubscriptionStatus } from "@prisma/client";
+import { PLAN_PRICING_MINOR, resolveAppOrigin } from "@/lib/payments/config";
+import { SubscriptionStatus } from "@prisma/client";
 import { z } from "zod";
 
 const checkoutSchema = z.object({
@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
       amountMinor,
       planInterval,
       isUpgrade: false,
+      appUrl: resolveAppOrigin(req),
     });
 
     return NextResponse.json({

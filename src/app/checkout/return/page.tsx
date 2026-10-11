@@ -41,6 +41,8 @@ function ReturnContent() {
         if (res.ok && data.verified) {
           setVerified(true);
           setMessage(data.message || "Payment verified! Your subscription is now active.");
+        } else if (data.error) {
+          setError(data.error);
         } else {
           setMessage(data.message || "Awaiting asynchronous provider webhook confirmation.");
         }
