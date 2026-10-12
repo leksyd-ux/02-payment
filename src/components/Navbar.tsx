@@ -30,8 +30,9 @@ export default function Navbar({ user }: NavbarProps) {
   return (
     <header className="app-header">
       <div className="brand-title">
-        <span>Payment & Subscription</span>
-        <span className="brand-badge">Slice 2</span>
+        <span className="brand-mark" aria-hidden="true">◈</span>
+        <span className="brand-name">Tessera</span>
+        <span className="brand-badge">Payments</span>
       </div>
 
       <nav className="nav-links">

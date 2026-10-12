@@ -1,30 +1,50 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 
 :root {
-  --bg-primary: #0a0d14;
-  --bg-surface: #121722;
-  --bg-surface-elevated: #1a2234;
-  --bg-input: #161c2b;
-  --border-color: #242f45;
-  --border-focus: #6366f1;
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --accent: #6366f1;
-  --accent-hover: #4f46e5;
-  --accent-text: #ffffff;
-  --danger-bg: rgba(239, 68, 68, 0.12);
-  --danger-border: rgba(239, 68, 68, 0.4);
-  --danger-text: #fca5a5;
-  --success-bg: rgba(34, 197, 94, 0.12);
-  --success-border: rgba(34, 197, 94, 0.4);
-  --success-text: #86efac;
-  --warning-bg: rgba(234, 179, 8, 0.12);
-  --warning-border: rgba(234, 179, 8, 0.4);
-  --warning-text: #fde047;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  /* Surfaces — deep teal ink */
+  --bg-primary: #04100e;
+  --bg-surface: #081d1a;
+  --bg-surface-elevated: #0d2723;
+  --bg-input: #0a211d;
+  --border-color: #173a34;
+  --border-focus: #2dd4bf;
+
+  /* Type */
+  --text-primary: #e9fdf7;
+  --text-secondary: #8fb8ae;
+  --text-muted: #5b8177;
+
+  /* Brand — deep teal + warm amber */
+  --accent: #16c6ad;
+  --accent-hover: #0d9488;
+  --accent-text: #04211d;
+  --brand-teal: #16c6ad;
+  --brand-amber: #f5a524;
+  --gradient-brand: linear-gradient(135deg, #16c6ad 0%, #f5a524 100%);
+
+  /* Status */
+  --danger-bg: rgba(244, 63, 94, 0.12);
+  --danger-border: rgba(244, 63, 94, 0.4);
+  --danger-text: #fda4af;
+  --success-bg: rgba(16, 185, 129, 0.12);
+  --success-border: rgba(16, 185, 129, 0.4);
+  --success-text: #6ee7b7;
+  --warning-bg: rgba(245, 158, 11, 0.14);
+  --warning-border: rgba(245, 158, 11, 0.45);
+  --warning-text: #fcd34d;
+  --info-bg: rgba(34, 211, 238, 0.12);
+  --info-border: rgba(34, 211, 238, 0.4);
+  --info-text: #67e8f9;
+
+  /* Fonts */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+
+  /* Shape */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
 }
 
 * {
@@ -52,7 +72,7 @@ a {
 
 a:hover {
   text-decoration: underline;
-  color: #818cf8;
+  color: #7fe9d6;
 }
 
 /* Minimal Signed-In Shell */
@@ -128,9 +148,9 @@ a:hover {
 }
 
 .plan-pill-monthly {
-  background: rgba(99, 102, 241, 0.2);
-  color: #818cf8;
-  border: 1px solid rgba(99, 102, 241, 0.4);
+  background: rgba(22, 198, 173, 0.2);
+  color: #7fe9d6;
+  border: 1px solid rgba(22, 198, 173, 0.4);
 }
 
 .plan-pill-yearly {
@@ -185,7 +205,7 @@ a:hover {
 }
 
 .plan-card:hover {
-  border-color: rgba(99, 102, 241, 0.5);
+  border-color: rgba(22, 198, 173, 0.5);
 }
 
 .plan-card-current {
@@ -299,7 +319,7 @@ a:hover {
   font-size: 0.9375rem;
   font-weight: 700;
   margin-bottom: 12px;
-  color: #818cf8;
+  color: #7fe9d6;
 }
 
 .proration-row {
@@ -373,7 +393,7 @@ a:hover {
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: #232c42;
+  background: #123029;
   text-decoration: none;
 }
 
@@ -469,4 +489,139 @@ a:hover {
   resize: vertical;
   min-height: 80px;
   margin-top: 8px;
+}
+
+/* ============================================================
+   TESSERA BRAND LAYER — deep teal + warm amber
+   Appended last so it overrides the base skin consistently.
+   ============================================================ */
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-primary);
+  background-image:
+    radial-gradient(900px 520px at 12% -12%, rgba(22, 198, 173, 0.12), transparent 60%),
+    radial-gradient(760px 520px at 104% -6%, rgba(245, 165, 36, 0.08), transparent 55%);
+  background-attachment: fixed;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+}
+
+.section-title,
+.auth-title,
+.dashboard-greeting,
+.plan-name,
+.plan-price,
+.modal-title,
+.merchant-title,
+.workspace-title,
+.job-filename,
+.brand-name {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+code, pre, kbd, samp,
+.code-output,
+.verification-code-input,
+.dev-mailbox-code {
+  font-family: var(--font-mono);
+}
+
+/* App shell header */
+.app-header {
+  background: rgba(8, 29, 26, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+/* Brand lockup */
+.brand-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+}
+
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--gradient-brand);
+  color: #04211d;
+  font-size: 0.95rem;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(22, 198, 173, 0.35);
+}
+
+.brand-name {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.brand-badge {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--brand-teal);
+  background: rgba(22, 198, 173, 0.12);
+  border: 1px solid rgba(22, 198, 173, 0.3);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* Signature gradient rule under centered section titles */
+.section-title::after {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 3px;
+  margin: 14px auto 0;
+  border-radius: 999px;
+  background: var(--gradient-brand);
+}
+
+/* Buttons */
+.btn-primary {
+  background: linear-gradient(180deg, #1ad3b8 0%, #12b39c 100%);
+  color: var(--accent-text);
+  box-shadow: 0 8px 20px rgba(18, 179, 156, 0.28);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #22e0c4 0%, #15bfa7 100%);
+  box-shadow: 0 10px 26px rgba(18, 179, 156, 0.4);
+}
+
+.btn:focus-visible,
+.btn-primary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(22, 198, 173, 0.4);
+}
+
+/* Nav + plan accents */
+.nav-link.active {
+  color: var(--brand-teal);
+  background: rgba(22, 198, 173, 0.12);
+}
+
+.current-indicator {
+  background: var(--gradient-brand);
+  color: #04211d;
+}
+
+.plan-card-current {
+  border-color: var(--brand-teal);
+  box-shadow: 0 0 0 2px rgba(22, 198, 173, 0.7);
 }

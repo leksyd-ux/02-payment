@@ -4,7 +4,7 @@ import { getCurrentSession } from "@/lib/security/session";
 import Navbar from "@/components/Navbar";
 
 export const metadata: Metadata = {
-  title: "Payment and Subscription Slice — Assessment 2",
+  title: "Tessera · Payments & Subscriptions (Slice 2)",
   description:
     "Production-minded subscription system featuring test-mode Flutterwave integration, mid-cycle proration, scheduled downgrades, and append-only payment event logging.",
 };
